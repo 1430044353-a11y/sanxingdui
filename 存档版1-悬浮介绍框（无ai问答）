@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>三星堆全息 AR - 空间悬浮介绍版</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r160/three.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { margin: 0; background: #000; overflow: hidden; font-family: 'Segoe UI', system-ui, sans-serif; }
+        #video-container { position: fixed; inset: 0; z-index: 1; }
+        video#webcam { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+        #black-overlay { position: fixed; inset: 0; background: #000; z-index: 2; pointer-events: none; opacity: 0.85; }
+        canvas#three-canvas { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 3; pointer-events: none; }
+        
+        .info-panel { position: absolute; top: 40px; left: 40px; color: #fff; z-index: 10; pointer-events: none; }
+        
+        /* 浮动标签容器 */
+        #labels-container { position: absolute; inset: 0; z-index: 20; pointer-events: none; overflow: hidden; }
+        
+        .floating-label {
+            position: absolute; width: 200px; padding: 12px;
+            background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 8px; color: #fff; backdrop-filter: blur(10px);
+            opacity: 0; transform: scale(0.8) translateY(10px);
+            transition: opacity 0.4s ease, transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            pointer-events: none;
+        }
+        .floating-label.active { opacity: 1; transform: scale(1) translateY(-20px); }
+        .label-title { font-weight: bold; font-size: 13px; margin-bottom: 4px; border-bottom: 1px solid rgba(255,255,255,0.2); padding-bottom: 2px; }
+        .label-desc { font-size: 11px; opacity: 0.8; line-height: 1.4; }
+
+        .bottom-left-panel { position: absolute; bottom: 40px; left: 40px; z-index: 10; }
+        .control-group { 
+            background: rgba(255,255,255,0.1); 
+            padding: 15px; border-radius: 12px; 
+            border: 1px solid rgba(255,255,255,0.2); 
+            backdrop-filter: blur(10px); 
+            pointer-events: auto; 
+            color: #fff;
+        }
+
+        #start-prompt { position: fixed; inset: 0; background: rgba(0,0,0,0.98); z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #fff; cursor: pointer; text-align: center; }
+        input[type=range] { -webkit-appearance: none; width: 140px; background: rgba(255,255,255,0.3); height: 2px; outline: none; }
+        input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 14px; width: 14px; border-radius: 50%; background: #fff; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+<div id="start-prompt">
+    <div class="text-3xl font-light mb-4 tracking-[0.5em]">SANXINGDUI HOLOGRAPHIC</div>
+    <div class="text-[10px] opacity-40 mb-10 tracking-[0.3em]">空间锚点同步系统 V8.0</div>
+    <div class="px-10 py-3 border border-white text-white hover:bg-white hover:text-black transition-all text-sm tracking-widest">启动全息链路</div>
+</div>
+
+<div id="black-overlay"></div>
+
+<div class="info-panel">
+    <div class="mb-1 text-[10px] tracking-[0.5em] opacity-50 uppercase">Spatial Interface</div>
+    <h1 id="artifact-title" class="text-4xl font-bold mb-1">系统初始化...</h1>
+    <div id="artifact-id" class="text-[10px] font-mono tracking-widest opacity-40">双手缩放以激活空间介绍</div>
+</div>
+
+<!-- 浮动标签容器 -->
+<div id="labels-container"></div>
+
+<div class="bottom-left-panel">
+    <div class="control-group">
+        <div class="text-[10px] uppercase tracking-widest opacity-60 mb-2">背景暗度调节</div>
+        <input type="range" id="opacity-slider" min="0" max="100" value="85">
+    </div>
+</div>
+
+<div id="video-container">
+    <video id="webcam" playsinline autoplay></video>
+</div>
+
+<canvas id="three-canvas"></canvas>
+
+<script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+        }
+    }
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+const artifacts = [
+    { 
+        title: "青铜纵目面具", 
+        id: "ARCH-SX01", 
+        path: "https://raw.githubusercontent.com/1430044353-a11y/sanxingdui/main/1-v1.glb", 
+        size: 0.012,
+        triggerScale: 1.5,
+        hotspots: [
+            { pos: [2.2, 0.4, 0.8], title: "纵目构造", desc: "柱状凸出眼球，体现了古蜀人对超自然视力的渴望。" },
+            { pos: [-2.2, 0.8, 0.8], title: "云雷纹耳", desc: "双耳饰有精美云雷纹，象征倾听神谕的能力。" },
+            { pos: [0, -1.2, 1.2], title: "神秘笑意", desc: "嘴角上扬的线条，反映了祭祀艺术中神秘的面部表情。" }
+        ]
+    },
+    { 
+        title: "青铜神坛", 
+        id: "ARCH-SX02", 
+        path: "https://raw.githubusercontent.com/1430044353-a11y/sanxingdui/main/2-v1.glb", 
+        size: 0.010,
+        triggerScale: 1.6,
+        hotspots: [
+            { pos: [0, 1.8, 0.4], title: "顶部建筑", desc: "微型建筑构件，还原了商代建筑的精妙结构。" },
+            { pos: [1.2, -0.8, 0.8], title: "铸造工艺", desc: "多段式铸造工艺，展示了极高的青铜冶炼技术。" }
+        ]
+    }
+];
+
+let currentIdx = 0;
+let scene, camera, renderer, artifactGroup, hotspotsGroup;
+let isInitialized = false;
+
+// 交互变量
+let rotationVelocity = { x: 0, y: 0 };
+let lastSingleHandPos = null;
+let currentArtifactScale = 1.0;
+let lastPinchDist = null;
+
+// 切换逻辑
+let pinchStartTime = 0;
+let lastPinchState = false;
+
+// 浮动 UI 引用
+let floatingLabels = [];
+
+function createHotspot(data, index) {
+    const group = new THREE.Group();
+    const core = new THREE.Mesh(
+        new THREE.SphereGeometry(0.1, 16, 16),
+        new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8 })
+    );
+    const ring = new THREE.Mesh(
+        new THREE.RingGeometry(0.12, 0.15, 32),
+        new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide, transparent: true, opacity: 0.4 })
+    );
+    group.add(core, ring);
+    group.position.set(...data.pos);
+    
+    // 创建对应的 HTML 标签
+    const labelEl = document.createElement('div');
+    labelEl.className = 'floating-label';
+    labelEl.innerHTML = `
+        <div class="label-title">${data.title}</div>
+        <div class="label-desc">${data.desc}</div>
+    `;
+    document.getElementById('labels-container').appendChild(labelEl);
+    
+    floatingLabels.push({
+        element: labelEl,
+        object: group,
+        data: data
+    });
+    
+    return group;
+}
+
+function loadArtifact(index) {
+    if (!artifactGroup) return;
+    
+    // 清理旧内容
+    while(artifactGroup.children.length > 0) artifactGroup.remove(artifactGroup.children[0]);
+    while(hotspotsGroup.children.length > 0) hotspotsGroup.remove(hotspotsGroup.children[0]);
+    document.getElementById('labels-container').innerHTML = '';
+    floatingLabels = [];
+
+    const config = artifacts[index];
+    document.getElementById('artifact-title').innerText = "读取中...";
+    
+    new GLTFLoader().load(config.path, (gltf) => {
+        let mesh;
+        gltf.scene.traverse(c => { if(c.isMesh) mesh = c; });
+        if(mesh) {
+            const material = new THREE.PointsMaterial({
+                color: 0xffffff, size: config.size, transparent: true,
+                opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false
+            });
+            const points = new THREE.Points(mesh.geometry, material);
+            const box = new THREE.Box3().setFromObject(points);
+            const center = box.getCenter(new THREE.Vector3());
+            const size = box.getSize(new THREE.Vector3());
+            const scale = 5.0 / Math.max(size.x, size.y, size.z);
+            points.scale.set(scale, scale, scale);
+            points.position.sub(center.multiplyScalar(scale));
+            artifactGroup.add(points);
+            
+            currentArtifactScale = 1.0;
+            artifactGroup.scale.set(1, 1, 1);
+            
+            config.hotspots?.forEach((h, i) => { hotspotsGroup.add(createHotspot(h, i)); });
+
+            document.getElementById('artifact-title').innerText = config.title;
+            document.getElementById('artifact-id').innerText = config.id;
+        }
+    });
+}
+
+function updateSpatialLabels() {
+    const config = artifacts[currentIdx];
+    const isActive = currentArtifactScale >= config.triggerScale;
+    
+    floatingLabels.forEach(label => {
+        // 1. 将 3D 位置转换为 2D 屏幕位置
+        const vector = new THREE.Vector3();
+        label.object.getWorldPosition(vector);
+        vector.project(camera);
+
+        const x = (vector.x * 0.5 + 0.5) * window.innerWidth;
+        const y = (-vector.y * 0.5 + 0.5) * window.innerHeight;
+
+        // 2. 更新 DOM 样式
+        label.element.style.left = `${x}px`;
+        label.element.style.top = `${y}px`;
+        
+        // 3. 根据缩放和是否在相机前方决定显隐
+        const inFront = vector.z < 1.0; 
+        if (isActive && inFront) {
+            label.element.classList.add('active');
+        } else {
+            label.element.classList.remove('active');
+        }
+    });
+}
+
+function onHandResults(results) {
+    const hands = results.multiHandLandmarks;
+    if (hands && hands.length > 0) {
+        if (hands.length >= 2) {
+            lastSingleHandPos = null;
+            const h1 = hands[0][8]; const h2 = hands[1][8];
+            const currentDist = Math.sqrt(Math.pow(h1.x - h2.x, 2) + Math.pow(h1.y - h2.y, 2));
+            if (lastPinchDist !== null) {
+                const delta = (currentDist / lastPinchDist);
+                currentArtifactScale = Math.min(Math.max(currentArtifactScale * delta, 0.5), 3.0);
+                artifactGroup.scale.set(currentArtifactScale, currentArtifactScale, currentArtifactScale);
+            }
+            lastPinchDist = currentDist;
+        } else {
+            lastPinchDist = null;
+            const h = hands[0];
+            const indexTip = h[8]; const thumbTip = h[4];
+            if (!lastSingleHandPos) lastSingleHandPos = { x: indexTip.x, y: indexTip.y };
+            rotationVelocity.y = (indexTip.x - lastSingleHandPos.x) * 2.5;
+            rotationVelocity.x = (indexTip.y - lastSingleHandPos.y) * 2.5;
+            lastSingleHandPos = { x: indexTip.x, y: indexTip.y };
+
+            const d = Math.sqrt(Math.pow(thumbTip.x - indexTip.x, 2) + Math.pow(thumbTip.y - indexTip.y, 2));
+            const isPinching = d < 0.045;
+            if (isPinching) {
+                if (!lastPinchState) pinchStartTime = Date.now();
+                else if (Date.now() - pinchStartTime > 500) {
+                    currentIdx = (currentIdx + 1) % artifacts.length;
+                    loadArtifact(currentIdx);
+                    pinchStartTime = Date.now() + 5000;
+                }
+            }
+            lastPinchState = isPinching;
+        }
+    } else {
+        lastSingleHandPos = null;
+        lastPinchDist = null;
+    }
+}
+
+function initThree() {
+    scene = new THREE.Scene();
+    camera = new THREE.PerspectiveCamera(35, window.innerWidth/window.innerHeight, 0.1, 1000);
+    camera.position.z = 15;
+
+    renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('three-canvas'), antialias: true, alpha: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+
+    artifactGroup = new THREE.Group();
+    hotspotsGroup = new THREE.Group();
+    scene.add(artifactGroup, hotspotsGroup);
+
+    loadArtifact(currentIdx);
+    isInitialized = true;
+    
+    const animate = () => {
+        requestAnimationFrame(animate);
+        if (artifactGroup) {
+            artifactGroup.rotation.y += rotationVelocity.y + 0.002;
+            artifactGroup.rotation.x += rotationVelocity.x;
+            hotspotsGroup.rotation.copy(artifactGroup.rotation);
+            hotspotsGroup.scale.copy(artifactGroup.scale);
+            
+            // 同步 2D 标签位置
+            updateSpatialLabels();
+
+            const t = Date.now() * 0.004;
+            hotspotsGroup.children.forEach(hs => {
+                hs.children[1].scale.setScalar(1 + Math.sin(t) * 0.2);
+                hs.children[1].material.opacity = 0.2 + Math.sin(t) * 0.2;
+            });
+            rotationVelocity.y *= 0.95;
+            rotationVelocity.x *= 0.95;
+        }
+        renderer.render(scene, camera);
+    };
+    animate();
+}
+
+document.getElementById('start-prompt').addEventListener('click', () => {
+    initThree();
+    const video = document.getElementById('webcam');
+    const handsObj = new window.Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
+    handsObj.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.75 });
+    handsObj.onResults(onHandResults);
+    const cam = new window.Camera(video, { onFrame: async () => { await handsObj.send({image: video}); }, width: 1280, height: 720 });
+    cam.start();
+    document.getElementById('start-prompt').style.opacity = '0';
+    setTimeout(() => document.getElementById('start-prompt').remove(), 600);
+});
+
+document.getElementById('opacity-slider').addEventListener('input', (e) => {
+    document.getElementById('black-overlay').style.opacity = e.target.value / 100;
+});
+
+window.addEventListener('resize', () => {
+    if (!isInitialized) return;
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>
