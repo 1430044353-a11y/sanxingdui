@@ -1,0 +1,1116 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>卡皮Qwen · 2.5D Arena Demo</title>
+  <script src="https://cdn.jsdelivr.net/npm/phaser@3.70.0/dist/phaser.min.js"></script>
+  <style>
+    :root {
+      --bg: #130f1d;
+      --panel: rgba(17, 12, 27, 0.88);
+      --panel-line: rgba(171, 131, 255, 0.25);
+      --text: #f3edff;
+      --muted: #bfb3d9;
+      --accent: #9c6dff;
+      --accent2: #ff79da;
+      --green: #1fd2c8;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at 20% 20%, rgba(156,109,255,0.15), transparent 25%),
+        radial-gradient(circle at 80% 10%, rgba(255,121,218,0.12), transparent 30%),
+        linear-gradient(180deg, #161122 0%, #0c0a14 100%);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      overflow: hidden; /* 禁止页面滚动 */
+    }
+    #app {
+      width: 100vw;
+      height: 100vh;
+      max-width: 100%;
+      max-height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* 角色介绍界面样式 */
+    #characterIntro {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: linear-gradient(135deg, #130f1d 0%, #0c0a14 100%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      transition: opacity 0.5s ease, transform 0.5s ease;
+    }
+    #characterIntro.hide {
+      opacity: 0;
+      transform: translateY(-100%);
+      pointer-events: none;
+    }
+    .character-card {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      background: var(--panel);
+      border: 1px solid var(--panel-line);
+      border-radius: 24px;
+      padding: 40px;
+      box-shadow: 0 20px 80px rgba(0,0,0,0.4);
+      backdrop-filter: blur(14px);
+      max-width: 600px;
+      width: 90%;
+      text-align: center;
+    }
+    .character-img {
+      width: 180px;
+      height: 180px;
+      margin-bottom: 20px;
+      border-radius: 50%;
+      border: 4px solid var(--accent);
+      box-shadow: 0 0 30px rgba(156,109,255,0.5);
+    }
+    .character-name {
+      font-size: 36px;
+      font-weight: 800;
+      margin: 10px 0;
+      color: var(--accent2);
+      text-shadow: 0 0 10px rgba(255,121,218,0.3);
+    }
+    .character-desc {
+      color: var(--muted);
+      line-height: 1.7;
+      margin-bottom: 30px;
+      font-size: 16px;
+    }
+    .start-game-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      height: 50px;
+      border-radius: 14px;
+      padding: 0 24px;
+      font-weight: 700;
+      border: none;
+      cursor: pointer;
+      transition: 0.2s ease;
+      text-decoration: none;
+      user-select: none;
+      background: linear-gradient(135deg, var(--accent) 0%, var(--accent2) 100%);
+      color: white;
+      font-size: 18px;
+      min-width: 200px;
+    }
+    .start-game-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+    }
+
+    #bootPanel {
+      display: none; /* 隐藏原来的启动面板 */
+    }
+    #gameWrap {
+      width: 100vw;
+      height: 100vh;
+      max-width: 100%;
+      max-height: 100%;
+      overflow: hidden;
+      border-radius: 0;
+      border: none;
+      box-shadow: none;
+      position: relative;
+      background: #08060d;
+    }
+    #game {
+      width: 100%;
+      height: 100%;
+    }
+    #overlayTip {
+      position: absolute;
+      right: 16px;
+      bottom: 16px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: rgba(10,8,18,0.65);
+      border: 1px solid rgba(255,255,255,0.08);
+      color: #efe8ff;
+      font-size: 12px;
+      line-height: 1.6;
+      z-index: 20;
+      pointer-events: none;
+      backdrop-filter: blur(8px);
+    }
+    @media (max-width: 980px) {
+      .character-name {
+        font-size: 28px;
+      }
+      .character-desc {
+        font-size: 14px;
+      }
+      .character-card {
+        padding: 20px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <!-- 角色介绍界面 -->
+    <div id="characterIntro">
+      <div class="character-card">
+        <img src="player_f.png" alt="卡皮Qwen" class="character-img" />
+        <div class="character-name">卡皮Qwen</div>
+        <div class="character-desc">
+          勇敢的竞技场战士，拥有精准的射击技巧和灵活的移动能力。<br/>
+          初始血量30，每击中1次掉1血，拾取能量方块可恢复血量。<br/>
+          毒雾会从顶部逐渐逼近，保持移动避免掉血！
+        </div>
+        <button class="start-game-btn" id="startGameBtn">进入游戏</button>
+      </div>
+    </div>
+
+    <!-- 原有启动面板（隐藏） -->
+    <div id="bootPanel">
+      <div class="title">可自定义障碍物 · 2.5D Arena Demo</div>
+      <div class="subtitle">
+        障碍物已可视化（半透明黑色），角色需30次攻击才会死亡，毒雾从顶部向下蔓延
+      </div>
+      <div class="grid">
+        <div class="card">
+          <h3>操作方式</h3>
+          <ul>
+            <li>W / A / S / D 移动角色</li>
+            <li>鼠标移动瞄准，左键射击</li>
+            <li>击败敌人后掉落能量方块，拾取后恢复血量</li>
+            <li>毒雾会从顶部逐渐逼近，保持移动避免掉血</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>核心规则</h3>
+          <ul>
+            <li>玩家/敌人初始血量30，每击中1次掉1血</li>
+            <li>敌人主要分散游荡，极少主动追击玩家</li>
+            <li>毒雾从顶部向下扩散，远离顶部区域</li>
+          </ul>
+        </div>
+      </div>
+      <div class="fileRow">
+        <button class="btn" id="startBtn">开始演示</button>
+      </div>
+    </div>
+
+    <!-- 游戏容器 -->
+    <div id="gameWrap">
+      <div id="game"></div>
+      <div id="overlayTip">操作：WASD 移动 · 鼠标瞄准 · 左键射击<br>毒雾从顶部向下蔓延，远离顶部！<br>角色需被击中30次才会死亡</div>
+    </div>
+  </div>
+
+<script>
+(() => {
+  let currentGame = null;
+  const startBtn = document.getElementById('startBtn');
+  const startGameBtn = document.getElementById('startGameBtn');
+  const characterIntro = document.getElementById('characterIntro');
+
+  // 角色介绍界面的开始游戏按钮点击事件
+  startGameBtn.addEventListener('click', () => {
+    characterIntro.classList.add('hide');
+    startBtn.click();
+  });
+
+  startBtn.addEventListener('click', () => {
+    startBtn.disabled = true;
+    startBtn.textContent = '正在启动...';
+    if (currentGame) {
+      currentGame.destroy(true);
+      currentGame = null;
+      document.getElementById('game').innerHTML = '';
+    }
+    currentGame = createGame();
+    setTimeout(() => {
+      startBtn.disabled = false;
+      startBtn.textContent = '重新开始';
+    }, 800);
+  });
+
+  function createGame() {
+    const config = {
+      type: Phaser.AUTO,
+      parent: 'game',
+      width: window.innerWidth,
+      height: window.innerHeight,
+      backgroundColor: '#0f0b18',
+      pixelArt: false,
+      physics: {
+        default: 'arcade',
+        arcade: { 
+          gravity: { y: 0 }, 
+          debug: false,
+          fps: 60,
+          fixedStep: true 
+        }
+      },
+      scene: new ArenaScene(),
+      scale: {
+        mode: Phaser.Scale.FIT,
+        autoCenter: Phaser.Scale.CENTER_BOTH,
+        width: window.innerWidth,
+        height: window.innerHeight,
+      }
+    };
+    return new Phaser.Game(config);
+  }
+
+  class ArenaScene extends Phaser.Scene {
+    constructor() {
+      super('ArenaScene');
+      this.bgWidth = 1280;
+      this.bgHeight = 720;
+      this.gameEnded = false;
+      this.tempRect = new Phaser.Geom.Rectangle();
+      this.gameStartTime = 0;
+      this.enemiesSpawned = false;
+      
+      this.attackPerHit = 1;
+      this.playerTotalHp = 30;
+      this.enemyTotalHp = 10;
+      
+      // 障碍物配置（未修改）
+      this.obstaclesConfig = [
+        {x: 640, y: 4, w: 1280, h: 100},
+        {x: 80, y: 400, w: 300, h: 150},
+        {x: 300, y: 570, w: 380, h: 145},
+        {x: 395, y: 320, w: 180, h: 130},
+        {x: 400, y: 520, w: 160, h: 200},
+        {x: 770, y: 580, w: 480, h: 320},
+        {x: 700, y: 170, w: 250, h: 185},
+        {x: 420, y: 130, w: 140, h: 140},
+        {x: 1080, y: 130, w: 200, h: 140},
+        {x: 1080, y: 310, w: 250, h: 170},
+        {x: 780, y: 200, w: 140, h: 250},
+        {x: 540, y: 280, w: 70, h: 120}
+      ];
+    }
+
+    preload() {
+      this.load.image('desertBg', 'desert_bg.png');
+      this.load.image('player_f', 'player_f.png');
+      this.load.image('player_b', 'player_b.png');
+      this.load.image('player_l', 'player_l.png');
+      this.load.image('player_r', 'player_r.png');
+      this.load.image('enemy1_f', 'enemy1_f.png');
+      this.load.image('enemy1_b', 'enemy1_b.png');
+      this.load.image('enemy1_l', 'enemy1_l.png');
+      this.load.image('enemy1_r', 'enemy1_r.png');
+      this.load.image('enemy2_f', 'enemy2_f.png');
+      this.load.image('enemy2_b', 'enemy2_b.png');
+      this.load.image('enemy2_l', 'enemy2_l.png');
+      this.load.image('enemy2_r', 'enemy2_r.png');
+      // 加载自定义能量方块素材（替换这里的文件名）
+      this.load.image('cubeTex', 'your_energy_cube.png');
+      
+      const progressBar = this.add.graphics();
+      const progressBox = this.add.graphics();
+      progressBox.fillStyle(0x222222, 0.8);
+      progressBox.fillRect(this.bgWidth/2 - 160, this.bgHeight/2 - 25, 320, 50);
+      
+      const loadingText = this.add.text(this.bgWidth/2, this.bgHeight/2 - 45, '加载中...', { 
+        fontSize: '20px', color: '#ffffff' 
+      }).setOrigin(0.5);
+      
+      const percentText = this.add.text(this.bgWidth/2, this.bgHeight/2, '0%', { 
+        fontSize: '18px', color: '#ffffff' 
+      }).setOrigin(0.5);
+
+      this.load.on('progress', (value) => {
+        progressBar.clear();
+        progressBar.fillStyle(0x9c6dff, 1);
+        progressBar.fillRect(this.bgWidth/2 - 150, this.bgHeight/2 - 15, 300 * value, 30);
+        percentText.setText(parseInt(value * 100) + '%');
+      });
+
+      this.load.on('complete', () => {
+        progressBar.destroy();
+        progressBox.destroy();
+        loadingText.destroy();
+        percentText.destroy();
+      });
+    }
+
+    create() {
+      this.gameStartTime = this.time.now;
+      this.makeProceduralTextures();
+      this.drawBackground();
+      this.createCollidersFromBg();
+      this.createPickups();
+      this.createCharacters();
+      this.createBullets();
+      this.createEffects();
+      this.createUI();
+      this.setupCamera();
+      this.setupInput();
+      this.setupPhysics();
+      
+      this.time.addEvent({ delay: 2000, callback: () => this.spawnExtraPickup(), loop: true });
+      this.time.addEvent({ delay: 2500, callback: () => this.enemyDecisionTick(), loop: true });
+      
+      this.obstacleBounds = [];
+      this.obstaclesConfig.forEach(obs => {
+        this.obstacleBounds.push(new Phaser.Geom.Rectangle(obs.x - obs.w/2, obs.y - obs.h/2, obs.w, obs.h));
+      });
+
+      // 初始化攻击光电效果粒子
+      this.initAttackParticles();
+    }
+
+    // 初始化攻击/被攻击光电粒子系统
+    initAttackParticles() {
+      // 玩家射击弹道光效
+      this.bulletLightTrail = this.add.particles(0, 0, 'smokeTex', {
+        lifespan: 150,
+        quantity: 2,
+        scale: { start: 0.15, end: 0.05 },
+        alpha: { start: 0.9, end: 0 },
+        speed: { min: 10, max: 30 },
+        emitting: false,
+        tint: [0x9c6dff, 0xff79da, 0xffffff]
+      }).setDepth(14);
+
+      // 敌人射击弹道光效
+      this.enemyBulletLightTrail = this.add.particles(0, 0, 'smokeTex', {
+        lifespan: 150,
+        quantity: 2,
+        scale: { start: 0.15, end: 0.05 },
+        alpha: { start: 0.9, end: 0 },
+        speed: { min: 10, max: 30 },
+        emitting: false,
+        tint: [0xff6e96, 0xffc95a, 0xff92e2]
+      }).setDepth(14);
+
+      // 击中目标爆炸光效
+      this.hitExplosion = this.add.particles(0, 0, 'burstTex', {
+        lifespan: 300,
+        quantity: 8,
+        scale: { start: 0.3, end: 0.8 },
+        alpha: { start: 1, end: 0 },
+        speed: { min: 50, max: 150 },
+        angle: { min: 0, max: 360 },
+        gravityY: 0,
+        emitting: false,
+        tint: [0x1fd2c8, 0x9c6dff, 0xff79da, 0xffffff]
+      }).setDepth(35);
+
+      // 被攻击闪烁光效
+      this.hitFlash = this.add.particles(0, 0, 'smokeTex', {
+        lifespan: 200,
+        quantity: 5,
+        scale: { start: 0.4, end: 0.1 },
+        alpha: { start: 1, end: 0 },
+        speed: { min: 20, max: 80 },
+        angle: { min: 0, max: 360 },
+        emitting: false,
+        tint: [0xffffff, 0xffd36b, 0xff93e0]
+      }).setDepth(35);
+
+      // 枪口火焰光效
+      this.muzzleFlash = this.add.particles(0, 0, 'burstTex', {
+        lifespan: 100,
+        quantity: 3,
+        scale: { start: 0.2, end: 0.4 },
+        alpha: { start: 1, end: 0 },
+        speed: { min: 30, max: 80 },
+        angle: { min: -30, max: 30 },
+        emitting: false,
+        tint: [0xff79da, 0xffc46e, 0xffffff]
+      }).setDepth(35);
+    }
+
+    makeProceduralTextures() {
+      const g = this.add.graphics();
+      g.clear();
+      g.fillStyle(0x8d5bff, 1);
+      g.fillRoundedRect(0, 0, 40, 26, 12);
+      g.fillStyle(0xf0d6ff, 0.95);
+      g.fillCircle(10, 8, 4);
+      g.fillStyle(0xff8fe0, 1);
+      g.fillCircle(28, 8, 4);
+      g.fillStyle(0xffffff, 0.8);
+      g.fillCircle(20, 18, 3);
+      g.generateTexture('bulletTex', 40, 26);
+
+      // 移除原有能量方块的程序化纹理生成（改为加载外部PNG）
+
+      g.clear();
+      g.fillStyle(0xff8fe0, 1);
+      g.fillCircle(26, 26, 22);
+      g.fillStyle(0xffffff, 0.5);
+      g.fillCircle(18, 18, 10);
+      g.generateTexture('smokeTex', 52, 52);
+
+      g.clear();
+      g.fillStyle(0xffc46e, 1);
+      g.fillCircle(56, 56, 44);
+      g.fillStyle(0xff6ba0, 0.8);
+      g.fillCircle(36, 42, 20);
+      g.fillStyle(0xffffff, 0.75);
+      g.fillCircle(72, 34, 10);
+      g.generateTexture('burstTex', 112, 112);
+      g.destroy();
+    }
+
+    drawBackground() {
+      this.bgImage = this.add.image(0, 0, 'desertBg')
+        .setOrigin(0, 0)
+        .setDepth(0)
+        .setDisplaySize(this.bgWidth, this.bgHeight);
+
+      this.physics.world.setBounds(0, 0, this.bgWidth, this.bgHeight);
+      this.cameras.main.setBounds(0, 0, this.bgWidth, this.bgHeight);
+    }
+
+    // 障碍物透明度 = 0（完全不可见）
+    createCollidersFromBg() {
+      this.walls = this.physics.add.staticGroup();
+      
+      this.obstaclesConfig.forEach((obs) => {
+        const rect = this.add.rectangle(obs.x, obs.y, obs.w, obs.h, 0x000000, 0); // 透明度 0
+        rect.setDepth(5);
+        this.physics.add.existing(rect, true);
+        this.walls.add(rect);
+      });
+    }
+
+    createPickups() {
+      this.pickups = this.physics.add.group();
+      const initialPickups = [
+        { x: 280, y: 380 },
+        { x: 580, y: 380 },
+        { x: 880, y: 380 },
+        { x: 1080, y: 380 }
+      ];
+      initialPickups.forEach((p) => this.spawnPickup(p.x, p.y));
+    }
+
+    spawnPickup(x, y) {
+      const cube = this.pickups.create(x, y, 'cubeTex');
+      cube.setScale(0.03);
+      cube.setDepth(7);
+      cube.body.setCircle(24, 24, 10);
+      cube.body.setAllowGravity(false);
+      this.tweens.add({ targets: cube, y: y - 10, duration: 900, yoyo: true, repeat: -1, ease: 'sine.inOut' });
+      return cube;
+    }
+
+    spawnExtraPickup() {
+      if (this.pickups.countActive(true) >= 6) return;
+      const pt = this.findValidSpawnPoint();
+      this.spawnPickup(pt.x, pt.y);
+    }
+
+    isPathBlocked(x1, y1, x2, y2) {
+      const line = new Phaser.Geom.Line(x1, y1, x2, y2);
+      for (let i = 0; i < this.obstacleBounds.length; i++) {
+        if (Phaser.Geom.Intersects.LineToRectangle(line, this.obstacleBounds[i])) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    getCharacterTexture(direction, charType, enemyIndex = 1) {
+      if (charType === 'player') {
+        const textures = {
+          up: 'player_b', down: 'player_f', left: 'player_l', right: 'player_r'
+        };
+        return textures[direction] || 'player_f';
+      } else {
+        const enemyPrefix = enemyIndex === 1 ? 'enemy1' : 'enemy2';
+        const textures = {
+          up: `${enemyPrefix}_b`, down: `${enemyPrefix}_f`, left: `${enemyPrefix}_l`, right: `${enemyPrefix}_r`
+        };
+        return textures[direction] || `${enemyPrefix}_f`;
+      }
+    }
+
+    getMovementDirection(velocityX, velocityY) {
+      if (Math.abs(velocityY) > Math.abs(velocityX)) {
+        return velocityY > 0 ? 'down' : 'up';
+      } else {
+        return velocityX > 0 ? 'right' : 'left';
+      }
+    }
+
+    createCharacters() {
+      this.player = this.physics.add.image(280, 380, this.getCharacterTexture('down', 'player'));
+      this.player.setCircle(26, this.player.width / 2 - 26, this.player.height / 2 - 26);
+      this.player.setCollideWorldBounds(true);
+      this.player.setDepth(11);
+      this.player.setDamping(false);
+      this.player.setDrag(0);
+      this.player.setMaxVelocity(350);
+      this.player.setScale(0.05);
+      this.player.hp = this.playerTotalHp;
+      this.player.maxHp = this.playerTotalHp;
+      this.player.lastShot = 0;
+      this.player.power = 0;
+      this.player.currentDirection = 'down';
+
+      this.playerShadow = this.add.ellipse(this.player.x, this.player.y + 38, 72, 26, 0x08060d, 0.32).setDepth(9);
+
+      this.playerHpBarBg = this.add.rectangle(this.player.x, this.player.y - 60, 80, 8, 0x000000, 0.7).setOrigin(0.5).setDepth(12);
+      this.playerHpBar = this.add.rectangle(this.player.x - 38, this.player.y - 60, 76, 6, 0x36f0b6, 1).setOrigin(0, 0.5).setDepth(13);
+      this.playerHpText = this.add.text(this.player.x, this.player.y - 68, `${this.player.hp}/${this.player.maxHp}`, {
+        fontSize: '10px', fontStyle: '800', color: '#ffffff', stroke: '#000000', strokeThickness: 2
+      }).setOrigin(0.5).setDepth(14);
+
+      this.enemies = this.physics.add.group();
+      this.enemyHpBars = new Map();
+      this.enemyInfo = new Map();
+    }
+
+    spawnEnemies() {
+      if (this.enemiesSpawned) return;
+      
+      const enemyPoints = [
+        { x: 880, y: 380, type: 1 },
+        { x: 1080, y: 380, type: 2 }
+      ];
+      enemyPoints.forEach((p, i) => {
+        const initialDir = 'down';
+        const e = this.physics.add.image(p.x, p.y, this.getCharacterTexture(initialDir, 'enemy', p.type));
+        e.setScale(0.05);
+        e.setCircle(24, e.width / 2 - 24, e.height / 2 - 24);
+        e.setCollideWorldBounds(true);
+        e.setDepth(11);
+        e.setDamping(false);
+        e.setDrag(0);
+        e.setMaxVelocity(250);
+        e.hp = this.enemyTotalHp;
+        e.maxHp = this.enemyTotalHp;
+        e.lastShot = 0;
+        e.aggro = false;
+        e.wanderTarget = this.findValidSpawnPointAwayFromOtherEnemies(e);
+        e.wanderChangeTime = this.time.now + Phaser.Math.Between(1000, 5000);
+        e.shadow = this.add.ellipse(e.x, e.y + 34, 68, 24, 0x08060d, 0.28).setDepth(9);
+        this.enemies.add(e);
+
+        this.enemyInfo.set(e, { type: p.type, currentDirection: initialDir });
+
+        const hpBg = this.add.rectangle(e.x, e.y - 60, 80, 8, 0x000000, 0.7).setOrigin(0.5).setDepth(12);
+        const hpBar = this.add.rectangle(e.x - 38, e.y - 60, 76, 6, 0xff6e96, 1).setOrigin(0, 0.5).setDepth(13);
+        const hpText = this.add.text(e.x, e.y - 68, `${e.hp}/${e.maxHp}`, {
+          fontSize: '10px', fontStyle: '800', color: '#ffffff', stroke: '#000000', strokeThickness: 2
+        }).setOrigin(0.5).setDepth(14);
+        this.enemyHpBars.set(e, { bg: hpBg, bar: hpBar, text: hpText });
+      });
+      
+      this.physics.add.collider(this.enemies, this.walls);
+      this.physics.add.collider(this.enemies, this.enemies);
+      this.physics.add.collider(this.player, this.enemies);
+      this.physics.add.overlap(this.playerBullets, this.enemies, (b, e) => this.hitEnemy(b, e));
+      this.physics.add.overlap(this.enemyBullets, this.player, (b, p) => this.hitPlayer(b, p));
+      
+      this.enemiesSpawned = true;
+      this.ui.status.setText('敌人出现！小心应对');
+      setTimeout(() => {
+        this.ui.status.setText('毒雾从顶部逼近…');
+      }, 3000);
+    }
+
+    createBullets() {
+      this.playerBullets = this.physics.add.group({ maxSize: 30, runChildUpdate: false });
+      this.enemyBullets = this.physics.add.group({ maxSize: 30, runChildUpdate: false });
+    }
+
+    createEffects() {
+      this.smokeGroup = this.add.group();
+      for (let i = 0; i < 20; i++) {
+        const validPoints = [
+          {x: 200, y: 50}, {x: 400, y: 50}, {x: 600, y: 50},
+          {x: 800, y: 50}, {x: 1000, y: 50}, {x: 1100, y: 50}
+        ];
+        const p = validPoints[Phaser.Math.Between(0, validPoints.length-1)];
+        const s = this.add.image(p.x, p.y, 'smokeTex').setAlpha(0.45).setScale(Phaser.Math.FloatBetween(0.9, 1.8)).setDepth(20);
+        this.smokeGroup.add(s);
+      }
+
+      this.particles = this.add.particles(0, 0, 'smokeTex', {
+        lifespan: 320, quantity: 3, scale: { start: 0.28, end: 0 },
+        alpha: { start: 0.9, end: 0 }, speed: { min: 40, max: 110 },
+        emitting: false, tint: [0xff7bdb, 0xffd068, 0xffffff]
+      });
+      this.particles.setDepth(30);
+    }
+
+    createUI() {
+      this.ui = {};
+      this.ui.title = this.add.text(28, 22, '沙漠金字塔竞技场 - 卡皮Qwen', {
+        fontSize: '18px', color: '#d6ccff', fontStyle: '700'
+      }).setScrollFactor(0).setDepth(100);
+
+      this.ui.info = this.add.text(28, 52, 'WASD移动  鼠标瞄准  左键射击', {
+        fontSize: '16px', color: '#d6ccff'
+      }).setScrollFactor(0).setDepth(100);
+
+      this.ui.power = this.add.text(28, 82, '能量等级: 0', {
+        fontSize: '16px', color: '#8ff4f0', fontStyle: '700'
+      }).setScrollFactor(0).setDepth(100);
+
+      this.ui.hpBg = this.add.rectangle(28, 114, 210, 18, 0x000000, 0.35).setOrigin(0, 0.5).setScrollFactor(0).setDepth(100);
+      this.ui.hpBar = this.add.rectangle(28, 114, 210, 18, 0x36f0b6, 1).setOrigin(0, 0.5).setScrollFactor(0).setDepth(101);
+      this.ui.hpText = this.add.text(28, 129, `HP ${this.player.hp} / ${this.player.maxHp}`, {
+        fontSize: '14px', color: '#ffffff'
+      }).setScrollFactor(0).setDepth(100);
+
+      this.ui.status = this.add.text(this.bgWidth / 2, 36, '探索时间：10秒后敌人出现', {
+        fontSize: '26px', color: '#fff6ff', fontStyle: '800',
+        stroke: '#32173c', strokeThickness: 8
+      }).setOrigin(0.5, 0.5).setScrollFactor(0).setDepth(101);
+    }
+
+    setupCamera() {
+      this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
+      this.cameras.main.setZoom(1.05);
+    }
+
+    setupInput() {
+      this.keys = this.input.keyboard.addKeys('W,A,S,D,SPACE');
+      this.input.on('pointerdown', (pointer) => {
+        if (pointer.leftButtonDown()) this.tryShootPlayer(pointer.worldX, pointer.worldY);
+      });
+    }
+
+    setupPhysics() {
+      this.physics.add.collider(this.player, this.walls);
+      this.physics.add.collider(this.playerBullets, this.walls, (b) => this.killBullet(b, false));
+      this.physics.add.collider(this.enemyBullets, this.walls, (b) => this.killBullet(b, false));
+      // 核心修改：确保玩家与能量方块的重叠检测生效，自动吸收
+      this.physics.add.overlap(this.player, this.pickups, (p, cube) => {
+        this.collectPickup(cube);
+      }, null, this);
+    }
+
+    update(time, delta) {
+      if (this.gameEnded) return;
+      
+      if (!this.enemiesSpawned && (this.time.now - this.gameStartTime) >= 10000) {
+        this.spawnEnemies();
+      }
+      
+      this.handlePlayerMove();
+      this.handlePlayerAim(time);
+      this.updateEnemies(time);
+      this.updateBullets(delta);
+      this.updateGas(delta);
+      this.updateShadows();
+      this.updateHpBars();
+      this.updateUI();
+      this.checkEndState();
+    }
+
+    updateHpBars() {
+      if (this.player.active) {
+        this.playerHpBarBg.setPosition(this.player.x, this.player.y - 60);
+        this.playerHpBar.setPosition(this.player.x - 38, this.player.y - 60);
+        this.playerHpText.setPosition(this.player.x, this.player.y - 68);
+        
+        const hpRatio = this.player.hp / this.player.maxHp;
+        this.playerHpBar.width = 76 * hpRatio;
+        this.playerHpBar.fillColor = hpRatio > 0.5 ? 0x36f0b6 : (hpRatio > 0.25 ? 0xffc95a : 0xff6e96);
+        this.playerHpText.setText(`${Math.max(0, Math.ceil(this.player.hp))}/${this.player.maxHp}`);
+      }
+
+      if (this.enemiesSpawned) {
+        this.enemies.children.each((e) => {
+          if (!e.active) return;
+          const hpElements = this.enemyHpBars.get(e);
+          if (!hpElements) return;
+
+          hpElements.bg.setPosition(e.x, e.y - 60);
+          hpElements.bar.setPosition(e.x - 38, e.y - 60);
+          hpElements.text.setPosition(e.x, e.y - 68);
+          
+          const hpRatio = e.hp / e.maxHp;
+          hpElements.bar.width = 76 * hpRatio;
+          hpElements.bar.fillColor = hpRatio > 0.5 ? 0xff6e96 : (hpRatio > 0.25 ? 0xffc95a : 0x36f0b6);
+          hpElements.text.setText(`${Math.max(0, Math.ceil(e.hp))}/${e.maxHp}`);
+        });
+      }
+    }
+
+    handlePlayerMove() {
+      const speed = 350;
+      let vx = 0;
+      let vy = 0;
+      
+      if (this.keys.A.isDown) vx -= speed;
+      if (this.keys.D.isDown) vx += speed;
+      if (this.keys.W.isDown) vy -= speed;
+      if (this.keys.S.isDown) vy +=  speed;
+
+      this.player.setVelocity(vx, vy);
+      
+      if (vx !== 0 || vy !== 0) {
+        const newDirection = this.getMovementDirection(vx, vy);
+        if (newDirection !== this.player.currentDirection) {
+          this.player.setTexture(this.getCharacterTexture(newDirection, 'player'));
+          this.player.currentDirection = newDirection;
+        }
+      }
+    }
+
+    handlePlayerAim(time) {
+      const pointer = this.input.activePointer;
+      const angle = Phaser.Math.Angle.Between(this.player.x, this.player.y, pointer.worldX, pointer.worldY);
+      this.player.setRotation(0);
+
+      if (pointer.isDown || this.keys.SPACE.isDown) {
+        this.tryShootPlayer(pointer.worldX, pointer.worldY, time);
+      }
+    }
+
+    tryShootPlayer(targetX, targetY, time = this.time.now) {
+      if (time - this.player.lastShot < 300) return;
+      this.player.lastShot = time;
+      const bullet = this.spawnBullet(this.playerBullets, this.player.x, this.player.y, targetX, targetY, 500, 0xa97cff, 'player');
+      // 添加玩家子弹弹道光效
+      this.bulletLightTrail.setPosition(bullet.x, bullet.y);
+      this.bulletLightTrail.setAngle(Phaser.Math.RadToDeg(bullet.rotation));
+      this.bulletLightTrail.explode(2, bullet.x, bullet.y);
+      this.emitMuzzle(this.player.x, this.player.y);
+    }
+
+    spawnBullet(group, x, y, tx, ty, speed, tint, owner) {
+      let b = group.get(x, y, 'bulletTex');
+      if (!b) {
+        b = group.create(x, y, 'bulletTex');
+        b.setDepth(13);
+        b.setScale(0.42);
+        b.body.setAllowGravity(false);
+        b.body.setCircle(10, 10, 2);
+      }
+      
+      b.setActive(true);
+      b.setVisible(true);
+      b.setTint(tint);
+      b.ownerType = owner;
+      b.damage = this.attackPerHit;
+      b.spawnTime = this.time.now;
+      
+      const angle = Phaser.Math.Angle.Between(x, y, tx, ty);
+      this.physics.velocityFromRotation(angle, speed, b.body.velocity);
+      b.rotation = angle;
+
+      // 为敌人子弹添加弹道光效
+      if (owner === 'enemy') {
+        this.enemyBulletLightTrail.setPosition(b.x, b.y);
+        this.enemyBulletLightTrail.setAngle(Phaser.Math.RadToDeg(b.rotation));
+        this.enemyBulletLightTrail.explode(2, b.x, b.y);
+      }
+
+      return b;
+    }
+
+    emitMuzzle(x, y) {
+      // 增强枪口火焰光效
+      this.muzzleFlash.setPosition(x, y);
+      this.muzzleFlash.explode(3, x, y);
+      this.particles.setPosition(x, y);
+      this.particles.explode(5, x, y);
+    }
+
+    findValidSpawnPointAwayFromOtherEnemies(currentEnemy) {
+      let tries = 0;
+      const minDistance = 200;
+      while (tries < 50) {
+        const x = Phaser.Math.Between(100, 1180);
+        const y = Phaser.Math.Between(100, 620);
+        this.tempRect.setTo(x - 40, y - 40, 80, 80);
+        
+        let blockHit = false;
+        this.walls.children.each((wall) => {
+          if (Phaser.Geom.Intersects.RectangleToRectangle(this.tempRect, wall.getBounds())) {
+            blockHit = true;
+          }
+        });
+        
+        if (blockHit) {
+          tries++;
+          continue;
+        }
+        
+        let tooClose = false;
+        this.enemies.children.each((e) => {
+          if (e !== currentEnemy && e.active) {
+            const dist = Phaser.Math.Distance.Between(x, y, e.x, e.y);
+            if (dist < minDistance) tooClose = true;
+          }
+        });
+        
+        if (!tooClose) return { x, y };
+        tries++;
+      }
+      return { x: Phaser.Math.Between(100, 1180), y: Phaser.Math.Between(100, 620) };
+    }
+
+    updateEnemies(time) {
+      if (!this.enemiesSpawned) return;
+      
+      this.enemies.children.each((e) => {
+        if (!e.active) return;
+        const enemyData = this.enemyInfo.get(e);
+        
+        e.aggro = false;
+
+        if (time > e.wanderChangeTime || Phaser.Math.Distance.Between(e.x, e.y, e.wanderTarget.x, e.wanderTarget.y) < 50) {
+          e.wanderTarget = this.findValidSpawnPointAwayFromOtherEnemies(e);
+          e.wanderChangeTime = time + Phaser.Math.Between(1500, 6000);
+        }
+        
+        if (this.isPathBlocked(e.x, e.y, e.wanderTarget.x, e.wanderTarget.y)) {
+          e.wanderTarget = this.findValidSpawnPointAwayFromOtherEnemies(e);
+          e.wanderChangeTime = time + Phaser.Math.Between(1000, 3000);
+        }
+        
+        const angle = Phaser.Math.Angle.Between(e.x, e.y, e.wanderTarget.x, e.wanderTarget.y);
+        const speed = Phaser.Math.FloatBetween(120, 200);
+        const vx = Math.cos(angle) * speed;
+        const vy = Math.sin(angle) * speed;
+        e.setVelocity(vx, vy);
+        e.setRotation(0);
+        
+        const newDirection = this.getMovementDirection(vx, vy);
+        if (newDirection !== enemyData.currentDirection) {
+          e.setTexture(this.getCharacterTexture(newDirection, 'enemy', enemyData.type));
+          enemyData.currentDirection = newDirection;
+        }
+        
+        const distToPlayer = Phaser.Math.Distance.Between(e.x, e.y, this.player.x, this.player.y);
+        if (distToPlayer < 400 && time - e.lastShot > 5000 && !this.isPathBlocked(e.x, e.y, this.player.x, this.player.y)) {
+          e.lastShot = time;
+          const bullet = this.spawnBullet(this.enemyBullets, e.x, e.y, this.player.x, this.player.y, 380, 0xff92e2, 'enemy');
+          this.emitMuzzle(e.x, e.y);
+        }
+      });
+    }
+
+    enemyDecisionTick() {
+      if (!this.enemiesSpawned) return;
+      
+      this.enemies.children.each((e) => {
+        if (!e.active) return;
+        e.aggro = false;
+        if (Phaser.Math.FloatBetween(0, 1) < 0.3) {
+          e.wanderTarget = this.findValidSpawnPointAwayFromOtherEnemies(e);
+          e.wanderChangeTime = this.time.now + Phaser.Math.Between(1000, 4000);
+        }
+      });
+    }
+
+    updateBullets(delta) {
+      const now = this.time.now;
+      const killOld = (group) => {
+        group.children.each((b) => {
+          if (!b.active) return;
+          if (now - b.spawnTime > 1500) this.killBullet(b, true);
+        });
+      };
+      killOld(this.playerBullets);
+      killOld(this.enemyBullets);
+    }
+
+    hitEnemy(bullet, enemy) {
+      this.killBullet(bullet, true);
+      enemy.hp -= bullet.damage;
+      // 添加击中敌人爆炸光效
+      this.hitExplosion.setPosition(enemy.x, enemy.y);
+      this.hitExplosion.explode(8, enemy.x, enemy.y);
+      // 添加被攻击闪烁光效
+      this.hitFlash.setPosition(enemy.x, enemy.y);
+      this.hitFlash.explode(5, enemy.x, enemy.y);
+      // 敌人受击闪烁
+      this.flashTarget(enemy, 0xffffff, 150);
+      this.showDamage(enemy.x, enemy.y - 44, bullet.damage, '#ffd36b');
+      if (enemy.hp <= 0) {
+        const hpElements = this.enemyHpBars.get(enemy);
+        if (hpElements) {
+          hpElements.bg.destroy();
+          hpElements.bar.destroy();
+          hpElements.text.destroy();
+          this.enemyHpBars.delete(enemy);
+        }
+        this.enemyInfo.delete(enemy);
+        this.killEnemy(enemy);
+      }
+    }
+
+    hitPlayer(bullet, player) {
+      this.killBullet(bullet, true);
+      player.hp -= bullet.damage;
+      // 添加玩家被击中爆炸光效
+      this.hitExplosion.setPosition(player.x, player.y);
+      this.hitExplosion.explode(8, player.x, player.y);
+      // 添加玩家被攻击闪烁光效
+      this.hitFlash.setPosition(player.x, player.y);
+      this.hitFlash.explode(5, player.x, player.y);
+      // 玩家受击闪烁
+      this.flashTarget(player, 0xffffff, 150);
+      this.showDamage(player.x, player.y - 52, bullet.damage, '#ff93e0');
+      this.cameras.main.shake(100, 0.006);
+      if (player.hp <= 0) {
+        this.endGame(false);
+      }
+    }
+
+    killEnemy(enemy) {
+      enemy.shadow.destroy();
+      // 增强敌人死亡爆炸光效
+      this.hitExplosion.setPosition(enemy.x, enemy.y);
+      this.hitExplosion.explode(15, enemy.x, enemy.y);
+      const burst = this.add.image(enemy.x, enemy.y, 'burstTex').setScale(0.2).setDepth(35);
+      this.tweens.add({ targets: burst, scale: 0.82, alpha: 0, duration: 320, onComplete: () => burst.destroy() });
+      this.spawnPickup(enemy.x + Phaser.Math.Between(-14, 14), enemy.y + Phaser.Math.Between(-14, 14));
+      enemy.destroy();
+      this.cameras.main.shake(120, 0.004);
+    }
+
+    killBullet(bullet, soft) {
+      if (!bullet.active) return;
+      bullet.setActive(false);
+      bullet.setVisible(false);
+      
+      const puff = this.add.image(bullet.x, bullet.y, 'smokeTex').setScale(0.25).setDepth(25).setTint(soft ? 0xff92e2 : 0xffffff);
+      this.tweens.add({ targets: puff, alpha: 0, scale: 0.55, duration: 180, onComplete: () => puff.destroy() });
+    }
+
+    // 核心修改：确保拾取能量方块时血量+1，且自动吸收
+    collectPickup(cube) {
+      cube.destroy();
+      this.player.power += 1;
+      // 确保血量只加1，且不超过最大值
+      this.player.hp = Math.min(this.player.maxHp, this.player.hp + 1);
+      this.showDamage(this.player.x, this.player.y - 56, '+1', '#8ff4f0');
+      this.emitMuzzle(this.player.x, this.player.y);
+    }
+
+    updateGas(delta) {
+      const gasLine = Math.min(600, 100 + this.time.now * 0.0005);
+      
+      this.smokeGroup.getChildren().forEach((s, idx) => {
+        s.y += 0.1 + idx * 0.001;
+        if (s.y > gasLine + 40) s.y = Phaser.Math.Between(50, gasLine - 80);
+        s.x += Math.sin((this.time.now * 0.001) + idx) * 0.1;
+      });
+
+      const hurtByGas = (obj, scale) => {
+        if (!obj.active) return;
+        if (obj.y < gasLine) {
+          obj.hp -= 0.001 * delta * scale;
+          if (obj === this.player && obj.hp <= 0) this.endGame(false);
+          if (obj !== this.player && obj.hp <= 0) this.killEnemy(obj);
+        }
+      };
+      hurtByGas(this.player, 1);
+      if (this.enemiesSpawned) {
+        this.enemies.children.each((e) => hurtByGas(e, 0.8));
+      }
+    }
+
+    updateShadows() {
+      this.playerShadow.setPosition(this.player.x, this.player.y + 38);
+      if (this.enemiesSpawned) {
+        this.enemies.children.each((e) => {
+          if (e.active && e.shadow) e.shadow.setPosition(e.x, e.y + 34);
+        });
+      }
+    }
+
+    updateUI() {
+      this.ui.power.setText(`能量等级: ${this.player.power}`);
+      
+      const hpRatio = Phaser.Math.Clamp(this.player.hp / this.player.maxHp, 0, 1);
+      this.ui.hpBar.width = 210 * hpRatio;
+      this.ui.hpBar.fillColor = hpRatio > 0.5 ? 0x36f0b6 : (hpRatio > 0.25 ? 0xffc95a : 0xff6e96);
+      this.ui.hpText.setText(`HP ${Math.max(0, Math.ceil(this.player.hp))} / ${this.player.maxHp}`);
+      
+      if (!this.enemiesSpawned) {
+        const remaining = Math.max(0, 10 - Math.floor((this.time.now - this.gameStartTime) / 1000));
+        this.ui.status.setText(`探索时间：${remaining}秒后敌人出现`);
+      }
+    }
+
+    showDamage(x, y, value, color) {
+      const t = this.add.text(x, y, `${Math.ceil(value)}`, {
+        fontSize: '22px', fontStyle: '800', color,
+        stroke: '#28152f', strokeThickness: 6
+      }).setOrigin(0.5).setDepth(50);
+      this.tweens.add({ targets: t, y: y - 28, alpha: 0, duration: 500, onComplete: () => t.destroy() });
+    }
+
+    // 实现受击闪烁效果
+    flashTarget(target, tint = 0xffffff, duration = 80) {
+      const originalTint = target.tintTopLeft;
+      target.setTint(tint);
+      this.time.delayedCall(duration, () => {
+        if (target.active) {
+          target.setTint(originalTint);
+        }
+      });
+    }
+
+    checkEndState() {
+      if (this.enemiesSpawned && this.enemies.countActive(true) === 0 && !this.gameEnded) {
+        this.endGame(true);
+      }
+    }
+
+    endGame(win) {
+      if (this.gameEnded) return;
+      this.gameEnded = true;
+      this.player.setVelocity(0, 0);
+      this.ui.status.setText(win ? '胜利！清场成功' : '失败，点击重新开始');
+      this.ui.status.setColor(win ? '#fff4b1' : '#ffd6ef');
+      if (win) this.emitMuzzle(this.player.x, this.player.y);
+      this.cameras.main.shake(220, 0.006);
+    }
+
+    findValidSpawnPoint() {
+      let tries = 0;
+      while (tries < 50) {
+        const x = Phaser.Math.Between(200, 1100);
+        const y = Phaser.Math.Between(200, 600);
+        this.tempRect.setTo(x - 40, y - 40, 80, 80);
+        
+        let blockHit = false;
+        this.walls.children.each((wall) => {
+          if (Phaser.Geom.Intersects.RectangleToRectangle(this.tempRect, wall.getBounds())) {
+            blockHit = true;
+          }
+        });
+        
+        if (!blockHit) return { x, y };
+        tries++;
+      }
+      return { x: 580, y: 380 };
+    }
+  }
+})();
+</script>
+</body>
+</html>
